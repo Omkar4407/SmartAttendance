@@ -1,0 +1,184 @@
+import React from 'react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { Users, UserCheck, Clock, UserX, TrendingUp } from 'lucide-react';
+import { getAttendanceStats, getUsers, getTodayAttendance } from '../utils/attendanceData';
+import { format } from 'date-fns';
+
+const COLORS = ['#22c55e', '#f59e0b', '#ef4444'];
+
+export const Dashboard: React.FC = () => {
+  const stats = getAttendanceStats();
+  const users = getUsers();
+  const todayAttendance = getTodayAttendance();
+
+  const pieData = [
+    { name: 'Present', value: stats.presentToday, color: '#22c55e' },
+    { name: 'Late', value: stats.lateToday, color: '#f59e0b' },
+    { name: 'Absent', value: stats.absentToday, color: '#ef4444' },
+  ];
+
+  const weeklyData = [
+    { day: 'Mon', present: 8, late: 1, absent: 1 },
+    { day: 'Tue', present: 9, late: 0, absent: 1 },
+    { day: 'Wed', present: 7, late: 2, absent: 1 },
+    { day: 'Thu', present: 8, late: 1, absent: 1 },
+    { day: 'Fri', present: 9, late: 1, absent: 0 },
+    { day: 'Sat', present: 6, late: 0, absent: 4 },
+    { day: 'Sun', present: 5, late: 1, absent: 4 },
+  ];
+
+  const statCards = [
+    {
+      title: 'Total Users',
+      value: stats.totalUsers,
+      icon: Users,
+      color: 'bg-primary-500',
+      change: '+2 this week',
+    },
+    {
+      title: 'Present Today',
+      value: stats.presentToday,
+      icon: UserCheck,
+      color: 'bg-success-500',
+      change: `${stats.attendanceRate.toFixed(1)}% rate`,
+    },
+    {
+      title: 'Late Today',
+      value: stats.lateToday,
+      icon: Clock,
+      color: 'bg-warning-500',
+      change: '-1 from yesterday',
+    },
+    {
+      title: 'Absent Today',
+      value: stats.absentToday,
+      icon: UserX,
+      color: 'bg-error-500',
+      change: 'Same as yesterday',
+    },
+  ];
+
+  return (
+    <div className="space-y-8">
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {statCards.map((stat, index) => {
+          const Icon = stat.icon;
+          return (
+            <div key={stat.title} className="card animate-slide-up" style={{ animationDelay: `${index * 100}ms` }}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">{stat.title}</p>
+                  <p className="text-3xl font-bold text-gray-900 mt-1">{stat.value}</p>
+                  <p className="text-xs text-gray-500 mt-1">{stat.change}</p>
+                </div>
+                <div className={`w-12 h-12 ${stat.color} rounded-lg flex items-center justify-center`}>
+                  <Icon className="w-6 h-6 text-white" />
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Charts Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Weekly Attendance Chart */}
+        <div className="card">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-lg font-semibold text-gray-900">Weekly Attendance</h3>
+            <TrendingUp className="w-5 h-5 text-gray-400" />
+          </div>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={weeklyData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+              <XAxis dataKey="day" stroke="#6b7280" fontSize={12} />
+              <YAxis stroke="#6b7280" fontSize={12} />
+              <Tooltip 
+                contentStyle={{ 
+                  backgroundColor: 'white', 
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '8px',
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                }}
+              />
+              <Bar dataKey="present" stackId="a" fill="#22c55e" radius={[0, 0, 4, 4]} />
+              <Bar dataKey="late" stackId="a" fill="#f59e0b" />
+              <Bar dataKey="absent" stackId="a" fill="#ef4444" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Today's Status Pie Chart */}
+        <div className="card">
+          <h3 className="text-lg font-semibold text-gray-900 mb-6">Today's Status</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <PieChart>
+              <Pie
+                data={pieData}
+                cx="50%"
+                cy="50%"
+                innerRadius={60}
+                outerRadius={100}
+                paddingAngle={5}
+                dataKey="value"
+              >
+                {pieData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={COLORS[index]} />
+                ))}
+              </Pie>
+              <Tooltip 
+                contentStyle={{ 
+                  backgroundColor: 'white', 
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '8px',
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                }}
+              />
+            </PieChart>
+          </ResponsiveContainer>
+          <div className="flex justify-center space-x-6 mt-4">
+            {pieData.map((entry, index) => (
+              <div key={entry.name} className="flex items-center space-x-2">
+                <div 
+                  className="w-3 h-3 rounded-full" 
+                  style={{ backgroundColor: COLORS[index] }}
+                />
+                <span className="text-sm text-gray-600">{entry.name}: {entry.value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Recent Activity */}
+      <div className="card">
+        <h3 className="text-lg font-semibold text-gray-900 mb-6">Recent Activity</h3>
+        <div className="space-y-4">
+          {todayAttendance.slice(0, 5).map((record) => (
+            <div key={record.id} className="flex items-center justify-between py-3 border-b border-gray-100 last:border-b-0">
+              <div className="flex items-center space-x-3">
+                <div className={`w-2 h-2 rounded-full ${
+                  record.status === 'present' ? 'bg-success-500' :
+                  record.status === 'late' ? 'bg-warning-500' : 'bg-error-500'
+                }`} />
+                <div>
+                  <p className="font-medium text-gray-900 capitalize">{record.name}</p>
+                  <p className="text-sm text-gray-500">
+                    {format(parseISO(record.timestamp), 'h:mm a')}
+                  </p>
+                </div>
+              </div>
+              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                record.status === 'present' ? 'bg-success-100 text-success-800' :
+                record.status === 'late' ? 'bg-warning-100 text-warning-800' : 'bg-error-100 text-error-800'
+              }`}>
+                {record.status}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
