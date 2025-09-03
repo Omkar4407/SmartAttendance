@@ -1,5 +1,5 @@
 import React from 'react';
-import { Users, Camera, BarChart3, Settings } from 'lucide-react';
+import { Users, Camera, BarChart3, Settings, FileText } from 'lucide-react';
 import { cn } from '../utils/cn';
 
 interface LayoutProps {
@@ -12,6 +12,7 @@ const navigation = [
   { id: 'dashboard', name: 'Dashboard', icon: BarChart3 },
   { id: 'recognition', name: 'Face Recognition', icon: Camera },
   { id: 'users', name: 'Users', icon: Users },
+  { id: 'log', name: 'Attendance Log', icon: FileText },
   { id: 'settings', name: 'Settings', icon: Settings },
 ];
 
@@ -23,10 +24,10 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
+              <div className="w-8 h-8 bg-gradient-to-br from-primary-600 to-primary-700 rounded-lg flex items-center justify-center">
                 <Camera className="w-5 h-5 text-white" />
               </div>
-              <h1 className="text-xl font-bold text-gray-900">AttendanceTracker</h1>
+              <h1 className="text-xl font-bold text-gray-900">AttendanceTracker Pro</h1>
             </div>
             <div className="flex items-center space-x-4">
               <div className="text-sm text-gray-500">

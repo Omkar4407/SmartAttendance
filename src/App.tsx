@@ -17,10 +17,10 @@ function App() {
         return <FaceRecognition />;
       case 'users':
         return <UserManagement />;
-      case 'settings':
-        return <Settings />;
       case 'log':
         return <AttendanceLog />;
+      case 'settings':
+        return <Settings />;
       default:
         return <Dashboard />;
     }

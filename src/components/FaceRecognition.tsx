@@ -1,23 +1,76 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Camera, CameraOff, CheckCircle, AlertCircle, Users } from 'lucide-react';
-import { CameraState } from '../types';
-import { addAttendanceRecord } from '../utils/attendanceData';
+import { Camera, CameraOff, CheckCircle, AlertCircle, Users, Wifi, WifiOff } from 'lucide-react';
+import { apiService } from '../services/api';
+import { useWebSocket } from '../hooks/useWebSocket';
+
+interface RecognitionState {
+  isActive: boolean;
+  isRecognizing: boolean;
+  lastRecognized?: any;
+  confidence?: number;
+  message?: string;
+}
 
 export const FaceRecognition: React.FC = () => {
-  const [cameraState, setCameraState] = useState<CameraState>({
+  const [recognitionState, setRecognitionState] = useState<RecognitionState>({
     isActive: false,
     isRecognizing: false,
   });
-  const [lastMarked, setLastMarked] = useState<string | null>(null);
-  const [recentlyMarked, setRecentlyMarked] = useState<Set<string>>(new Set());
+  const [users, setUsers] = useState<any[]>([]);
+  const [recentlyMarked, setRecentlyMarked] = useState<Set<number>>(new Set());
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  
+  const { isConnected, lastMessage } = useWebSocket('ws://localhost:8080');
 
-  // Known users from the existing data
-  const knownUsers = [
-    'omkar bommakanti', 'vaishnavi bommakanti', 'vcb', 'dakshesh chennuri',
-    'chaitanya', 'sarvika', 'ian randi', 'tushi', 'karan', 'ashish'
-  ];
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  // Listen for WebSocket messages
+  useEffect(() => {
+    if (lastMessage) {
+      if (lastMessage.type === 'face_detected') {
+        setRecognitionState(prev => ({
+          ...prev,
+          isRecognizing: false,
+          lastRecognized: lastMessage.data.user,
+          confidence: lastMessage.data.confidence,
+        }));
+      } else if (lastMessage.type === 'attendance_marked') {
+        setRecognitionState(prev => ({
+          ...prev,
+          message: lastMessage.data.message,
+        }));
+        
+        // Add to recently marked
+        setRecentlyMarked(prev => new Set([...prev, lastMessage.data.user.id]));
+        
+        // Remove from recently marked after 30 seconds
+        setTimeout(() => {
+          setRecentlyMarked(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(lastMessage.data.user.id);
+            return newSet;
+          });
+        }, 30000);
+
+        // Clear message after 5 seconds
+        setTimeout(() => {
+          setRecognitionState(prev => ({ ...prev, message: undefined }));
+        }, 5000);
+      }
+    }
+  }, [lastMessage]);
+
+  const loadUsers = async () => {
+    try {
+      const usersData = await apiService.getUsers();
+      setUsers(usersData);
+    } catch (error) {
+      console.error('Error loading users:', error);
+    }
+  };
 
   const startCamera = async () => {
     try {
@@ -28,7 +81,10 @@ export const FaceRecognition: React.FC = () => {
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         streamRef.current = stream;
-        setCameraState(prev => ({ ...prev, isActive: true }));
+        setRecognitionState(prev => ({ ...prev, isActive: true }));
+        
+        // Start face recognition on the backend
+        await apiService.startRecognition();
       }
     } catch (error) {
       console.error('Error accessing camera:', error);
@@ -46,71 +102,44 @@ export const FaceRecognition: React.FC = () => {
       videoRef.current.srcObject = null;
     }
     
-    setCameraState({
+    setRecognitionState({
       isActive: false,
       isRecognizing: false,
     });
   };
 
-  const simulateRecognition = () => {
-    if (!cameraState.isActive) return;
-
-    setCameraState(prev => ({ ...prev, isRecognizing: true }));
-    
-    // Simulate face recognition with random user detection
-    setTimeout(() => {
-      const randomUser = knownUsers[Math.floor(Math.random() * knownUsers.length)];
-      const confidence = 0.85 + Math.random() * 0.1; // 85-95% confidence
-      
-      // Only mark attendance if this person hasn't been marked recently
-      if (!recentlyMarked.has(randomUser)) {
-        addAttendanceRecord(randomUser);
-        setLastMarked(randomUser);
-        setRecentlyMarked(prev => new Set([...prev, randomUser]));
-        
-        // Clear the recently marked status after 30 seconds
-        setTimeout(() => {
-          setRecentlyMarked(prev => {
-            const newSet = new Set(prev);
-            newSet.delete(randomUser);
-            return newSet;
-          });
-        }, 30000);
-      }
-      
-      setCameraState(prev => ({ 
-        ...prev, 
-        isRecognizing: false, 
-        lastRecognized: randomUser,
-        confidence: confidence * 100
-      }));
-    }, 2000);
-  };
-
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    
-    if (cameraState.isActive && !cameraState.isRecognizing) {
-      interval = setInterval(simulateRecognition, 3000);
-    }
-    
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [cameraState.isActive, cameraState.isRecognizing, recentlyMarked]);
-
   return (
     <div className="space-y-8">
+      {/* Connection Status */}
+      <div className={`p-4 rounded-lg ${isConnected ? 'bg-success-50 border border-success-200' : 'bg-error-50 border border-error-200'}`}>
+        <div className="flex items-center space-x-2">
+          {isConnected ? <Wifi className="w-4 h-4 text-success-600" /> : <WifiOff className="w-4 h-4 text-error-600" />}
+          <span className="text-sm font-medium">
+            {isConnected ? 'Connected to recognition server' : 'Disconnected from server'}
+          </span>
+        </div>
+      </div>
+
+      {/* Success Message */}
+      {recognitionState.message && (
+        <div className="bg-success-50 border border-success-200 rounded-lg p-4 animate-slide-up">
+          <div className="flex items-center space-x-2">
+            <CheckCircle className="w-5 h-5 text-success-600" />
+            <span className="font-medium text-success-800">{recognitionState.message}</span>
+          </div>
+        </div>
+      )}
+
       {/* Camera Controls */}
       <div className="card">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-semibold text-gray-900">Live Face Recognition</h2>
           <div className="flex items-center space-x-3">
             <div className={`w-3 h-3 rounded-full ${
-              cameraState.isActive ? 'bg-success-500 animate-pulse' : 'bg-gray-300'
+              recognitionState.isActive ? 'bg-success-500 animate-pulse' : 'bg-gray-300'
             }`} />
             <span className="text-sm text-gray-600">
-              {cameraState.isActive ? 'Camera Active' : 'Camera Inactive'}
+              {recognitionState.isActive ? 'Camera Active' : 'Camera Inactive'}
             </span>
           </div>
         </div>
@@ -119,7 +148,7 @@ export const FaceRecognition: React.FC = () => {
           {/* Camera Feed */}
           <div className="space-y-4">
             <div className="relative bg-gray-900 rounded-lg overflow-hidden aspect-video">
-              {cameraState.isActive ? (
+              {recognitionState.isActive ? (
                 <video
                   ref={videoRef}
                   autoPlay
@@ -137,7 +166,7 @@ export const FaceRecognition: React.FC = () => {
               )}
               
               {/* Recognition Overlay */}
-              {cameraState.isRecognizing && (
+              {recognitionState.isRecognizing && (
                 <div className="absolute inset-0 bg-primary-600 bg-opacity-20 flex items-center justify-center">
                   <div className="bg-white rounded-lg p-4 shadow-lg">
                     <div className="flex items-center space-x-2">
@@ -147,11 +176,26 @@ export const FaceRecognition: React.FC = () => {
                   </div>
                 </div>
               )}
+
+              {/* Face Detection Box */}
+              {recognitionState.lastRecognized && recognitionState.isActive && (
+                <div className="absolute top-4 left-4 right-4">
+                  <div className="bg-white bg-opacity-90 rounded-lg p-3 shadow-lg">
+                    <div className="flex items-center space-x-2">
+                      <CheckCircle className="w-4 h-4 text-success-600" />
+                      <span className="text-sm font-medium capitalize">{recognitionState.lastRecognized.name}</span>
+                      <span className="text-xs text-gray-500">
+                        {recognitionState.confidence?.toFixed(1)}%
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex space-x-3">
-              {!cameraState.isActive ? (
-                <button onClick={startCamera} className="btn-primary flex-1">
+              {!recognitionState.isActive ? (
+                <button onClick={startCamera} className="btn-primary flex-1" disabled={!isConnected}>
                   <Camera className="w-4 h-4 mr-2" />
                   Start Camera
                 </button>
@@ -169,21 +213,25 @@ export const FaceRecognition: React.FC = () => {
             <div className="bg-gray-50 rounded-lg p-6">
               <h3 className="text-lg font-medium text-gray-900 mb-4">Recognition Status</h3>
               
-              {cameraState.lastRecognized ? (
+              {recognitionState.lastRecognized ? (
                 <div className="space-y-4">
                   <div className="flex items-center space-x-3">
-                    <CheckCircle className="w-6 h-6 text-success-500" />
+                    <div className="w-12 h-12 bg-gradient-to-br from-primary-500 to-primary-600 rounded-full flex items-center justify-center">
+                      <span className="text-white font-semibold text-sm">
+                        {recognitionState.lastRecognized.name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)}
+                      </span>
+                    </div>
                     <div>
                       <p className="font-medium text-gray-900 capitalize">
-                        {cameraState.lastRecognized}
+                        {recognitionState.lastRecognized.name}
                       </p>
                       <p className="text-sm text-gray-500">
-                        Confidence: {cameraState.confidence?.toFixed(1)}%
+                        Confidence: {recognitionState.confidence?.toFixed(1)}%
                       </p>
                     </div>
                   </div>
                   
-                  {lastMarked === cameraState.lastRecognized && (
+                  {recentlyMarked.has(recognitionState.lastRecognized.id) && (
                     <div className="bg-success-50 border border-success-200 rounded-lg p-3">
                       <div className="flex items-center space-x-2">
                         <CheckCircle className="w-4 h-4 text-success-600" />
@@ -207,12 +255,15 @@ export const FaceRecognition: React.FC = () => {
               <div className="bg-blue-50 rounded-lg p-6">
                 <h4 className="font-medium text-gray-900 mb-3">Recently Marked</h4>
                 <div className="space-y-2">
-                  {Array.from(recentlyMarked).map(name => (
-                    <div key={name} className="flex items-center space-x-2">
-                      <div className="w-2 h-2 bg-blue-500 rounded-full" />
-                      <span className="text-sm text-gray-700 capitalize">{name}</span>
-                    </div>
-                  ))}
+                  {Array.from(recentlyMarked).map(userId => {
+                    const user = users.find(u => u.id === userId);
+                    return user ? (
+                      <div key={userId} className="flex items-center space-x-2">
+                        <div className="w-2 h-2 bg-blue-500 rounded-full" />
+                        <span className="text-sm text-gray-700 capitalize">{user.name}</span>
+                      </div>
+                    ) : null;
+                  })}
                 </div>
                 <p className="text-xs text-gray-500 mt-3">
                   These users won't be marked again for 30 seconds
@@ -220,16 +271,28 @@ export const FaceRecognition: React.FC = () => {
               </div>
             )}
 
-            {/* Known Users */}
+            {/* Registered Users */}
             <div className="bg-gray-50 rounded-lg p-6">
               <div className="flex items-center space-x-2 mb-4">
                 <Users className="w-5 h-5 text-gray-600" />
-                <h4 className="font-medium text-gray-900">Registered Users</h4>
+                <h4 className="font-medium text-gray-900">Registered Users ({users.length})</h4>
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                {knownUsers.map(user => (
-                  <div key={user} className="text-xs text-gray-600 capitalize bg-white rounded px-2 py-1">
-                    {user}
+              <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto">
+                {users.map(user => (
+                  <div key={user.id} className="flex items-center space-x-2 text-xs text-gray-600 bg-white rounded px-3 py-2">
+                    <div className="w-6 h-6 bg-gradient-to-br from-primary-500 to-primary-600 rounded-full flex items-center justify-center">
+                      <span className="text-white font-medium text-xs">
+                        {user.name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)}
+                      </span>
+                    </div>
+                    <span className="capitalize flex-1">{user.name}</span>
+                    <span className={`px-2 py-1 rounded-full text-xs ${
+                      user.role === 'admin' ? 'bg-purple-100 text-purple-700' :
+                      user.role === 'employee' ? 'bg-blue-100 text-blue-700' :
+                      'bg-green-100 text-green-700'
+                    }`}>
+                      {user.role}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -247,8 +310,9 @@ export const FaceRecognition: React.FC = () => {
             <ul className="text-sm text-blue-800 space-y-1">
               <li>• Click "Start Camera" to begin face recognition</li>
               <li>• The system will automatically detect and recognize faces</li>
-              <li>• Attendance is marked once per person per session</li>
+              <li>• Attendance is marked once per person per session (30-second cooldown)</li>
               <li>• Recognition confidence is displayed for each detection</li>
+              <li>• Real-time updates are shown via WebSocket connection</li>
             </ul>
           </div>
         </div>

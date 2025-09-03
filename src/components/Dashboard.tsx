@@ -1,30 +1,74 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Users, UserCheck, Clock, UserX, TrendingUp } from 'lucide-react';
-import { getAttendanceStats, getUsers, getTodayAttendance } from '../utils/attendanceData';
-import { format } from 'date-fns';
+import { Users, UserCheck, Clock, UserX, TrendingUp, RefreshCw } from 'lucide-react';
+import { apiService } from '../services/api';
+import { useWebSocket } from '../hooks/useWebSocket';
 
 const COLORS = ['#22c55e', '#f59e0b', '#ef4444'];
 
+interface Stats {
+  totalUsers: number;
+  presentToday: number;
+  lateToday: number;
+  absentToday: number;
+  attendanceRate: number;
+}
+
+interface WeeklyData {
+  day: string;
+  present: number;
+  late: number;
+  absent: number;
+}
+
 export const Dashboard: React.FC = () => {
-  const stats = getAttendanceStats();
-  const users = getUsers();
-  const todayAttendance = getTodayAttendance();
+  const [stats, setStats] = useState<Stats>({
+    totalUsers: 0,
+    presentToday: 0,
+    lateToday: 0,
+    absentToday: 0,
+    attendanceRate: 0,
+  });
+  const [weeklyData, setWeeklyData] = useState<WeeklyData[]>([]);
+  const [recentActivity, setRecentActivity] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  
+  const { isConnected, lastMessage } = useWebSocket('ws://localhost:8080');
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const [statsData, weeklyDataResponse, attendanceData] = await Promise.all([
+        apiService.getStats(),
+        apiService.getWeeklyData(),
+        apiService.getAttendance({ date: new Date().toISOString().split('T')[0] })
+      ]);
+
+      setStats(statsData);
+      setWeeklyData(weeklyDataResponse);
+      setRecentActivity(attendanceData.slice(0, 5));
+    } catch (error) {
+      console.error('Error loading dashboard data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  // Listen for real-time updates
+  useEffect(() => {
+    if (lastMessage?.type === 'attendance_marked') {
+      loadData(); // Refresh data when attendance is marked
+    }
+  }, [lastMessage]);
 
   const pieData = [
     { name: 'Present', value: stats.presentToday, color: '#22c55e' },
     { name: 'Late', value: stats.lateToday, color: '#f59e0b' },
     { name: 'Absent', value: stats.absentToday, color: '#ef4444' },
-  ];
-
-  const weeklyData = [
-    { day: 'Mon', present: 8, late: 1, absent: 1 },
-    { day: 'Tue', present: 9, late: 0, absent: 1 },
-    { day: 'Wed', present: 7, late: 2, absent: 1 },
-    { day: 'Thu', present: 8, late: 1, absent: 1 },
-    { day: 'Fri', present: 9, late: 1, absent: 0 },
-    { day: 'Sat', present: 6, late: 0, absent: 4 },
-    { day: 'Sun', present: 5, late: 1, absent: 4 },
   ];
 
   const statCards = [
@@ -58,8 +102,29 @@ export const Dashboard: React.FC = () => {
     },
   ];
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="flex items-center space-x-2">
+          <RefreshCw className="w-6 h-6 animate-spin text-primary-600" />
+          <span className="text-gray-600">Loading dashboard...</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8">
+      {/* Connection Status */}
+      <div className={`p-4 rounded-lg ${isConnected ? 'bg-success-50 border border-success-200' : 'bg-warning-50 border border-warning-200'}`}>
+        <div className="flex items-center space-x-2">
+          <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-success-500' : 'bg-warning-500'}`} />
+          <span className="text-sm font-medium">
+            {isConnected ? 'Connected to real-time updates' : 'Connecting to server...'}
+          </span>
+        </div>
+      </div>
+
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {statCards.map((stat, index) => {
@@ -153,10 +218,16 @@ export const Dashboard: React.FC = () => {
 
       {/* Recent Activity */}
       <div className="card">
-        <h3 className="text-lg font-semibold text-gray-900 mb-6">Recent Activity</h3>
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-lg font-semibold text-gray-900">Recent Activity</h3>
+          <button onClick={loadData} className="btn-secondary">
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Refresh
+          </button>
+        </div>
         <div className="space-y-4">
-          {todayAttendance.slice(0, 5).map((record) => (
-            <div key={record.id} className="flex items-center justify-between py-3 border-b border-gray-100 last:border-b-0">
+          {recentActivity.map((record, index) => (
+            <div key={record.id} className="flex items-center justify-between py-3 border-b border-gray-100 last:border-b-0 animate-slide-up" style={{ animationDelay: `${index * 100}ms` }}>
               <div className="flex items-center space-x-3">
                 <div className={`w-2 h-2 rounded-full ${
                   record.status === 'present' ? 'bg-success-500' :
@@ -165,7 +236,7 @@ export const Dashboard: React.FC = () => {
                 <div>
                   <p className="font-medium text-gray-900 capitalize">{record.name}</p>
                   <p className="text-sm text-gray-500">
-                    {format(parseISO(record.timestamp), 'h:mm a')}
+                    {new Date(record.timestamp).toLocaleTimeString()}
                   </p>
                 </div>
               </div>
